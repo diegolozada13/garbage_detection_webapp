@@ -2,7 +2,7 @@
 
 Demo local en Next.js (App Router + TypeScript) que:
 
-- Usa la webcam del navegador (con `react-webcam`).
+- Usa la webcam del navegador (con `react-webcam`) o una imagen subida.
 - Captura un frame cada ~700ms (pseudo-tiempo real).
 - Envía el frame a `POST /api/detect`.
 - `app/api/detect/route.ts` guarda el frame en `tmp/`, llama a `python/detect.py` y devuelve:

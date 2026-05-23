@@ -131,11 +131,11 @@ def main() -> int:
                         img_area = img_w * img_h
                         area_ratio = box_area / img_area
 
-                        if box_w < 40 or box_h < 40:
-                            continue
+                        # if box_w < 40 or box_h < 40:
+                        #     continue
 
-                        if area_ratio < 0.002:
-                            continue
+                        # if area_ratio < 0.002:
+                        #     continue
 
                         if area_ratio > 0.45:
                             continue
