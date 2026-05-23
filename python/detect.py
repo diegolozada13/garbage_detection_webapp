@@ -73,7 +73,6 @@ def main() -> int:
         if not source_path.exists():
             return fail(f"Image not found: {source_path}")
 
-        # Reuse a stable filename so public/outputs/ does not grow indefinitely.
         annotated_filename = "annotated-latest.jpg"
         annotated_path = outputs_dir / annotated_filename
         annotated_url = f"/outputs/{annotated_filename}"
@@ -81,7 +80,6 @@ def main() -> int:
         detections: list[dict] = []
         ok_out = False
 
-        # Clean up old outputs created by previous runs (best-effort).
         try:
             for p in outputs_dir.glob("annotated-*.jpg"):
                 if p.name != annotated_filename:
@@ -89,17 +87,17 @@ def main() -> int:
         except Exception:
             pass
 
-        # Ensure *no* stdout/stderr noise from Ultralytics/PyTorch. We'll emit JSON once at the end.
         with open(os.devnull, "w", encoding="utf-8") as devnull, contextlib.redirect_stdout(
             devnull
         ), contextlib.redirect_stderr(devnull):
-            from ultralytics import YOLO  # type: ignore
-            from PIL import Image  # type: ignore
+            from ultralytics import YOLO
+            from PIL import Image
 
             model = YOLO(str(weights_path))
             results = model.predict(
                 source=str(source_path),
-                conf=0.3,
+                conf=0.45,
+                imgsz=768,
                 verbose=False,
                 save=False,
                 show=False,
@@ -116,14 +114,39 @@ def main() -> int:
                 boxes = getattr(r, "boxes", None)
 
                 if boxes is not None and len(boxes) > 0:
-                    cls_ids = boxes.cls.cpu().numpy().astype(int).tolist()
-                    confs = boxes.conf.cpu().numpy().astype(float).tolist()
+                    img_h, img_w = r.orig_shape
 
-                    for class_id, conf in zip(cls_ids, confs):
+                    xyxy = boxes.xyxy.cpu()
+                    cls_ids_all = boxes.cls.cpu().numpy().astype(int).tolist()
+                    confs_all = boxes.conf.cpu().numpy().astype(float).tolist()
+
+                    keep_indices = []
+
+                    for idx, (coords, class_id, conf) in enumerate(zip(xyxy, cls_ids_all, confs_all)):
+                        x1, y1, x2, y2 = coords.tolist()
+
+                        box_w = x2 - x1
+                        box_h = y2 - y1
+                        box_area = box_w * box_h
+                        img_area = img_w * img_h
+                        area_ratio = box_area / img_area
+
+                        if box_w < 40 or box_h < 40:
+                            continue
+
+                        if area_ratio < 0.002:
+                            continue
+
+                        if area_ratio > 0.45:
+                            continue
+
+                        keep_indices.append(idx)
+
                         raw_name = str(names.get(int(class_id), class_id))
                         norm = raw_name.strip().lower()
                         class_name = CANONICAL_CLASS_NAME.get(norm, raw_name)
                         container = CONTAINER_BY_CLASS.get(norm, "Desconocido")
+
                         detections.append(
                             {
                                 "className": class_name,
@@ -132,7 +155,12 @@ def main() -> int:
                             }
                         )
 
-                im_bgr = r.plot()  # BGR-order numpy array
+                    if keep_indices:
+                        r.boxes = boxes[keep_indices]
+                    else:
+                        r.boxes = None
+
+                im_bgr = r.plot()
                 im_rgb = Image.fromarray(im_bgr[..., ::-1])  # RGB PIL image
                 im_rgb.save(annotated_path, format="JPEG", quality=85)
                 ok_out = True
